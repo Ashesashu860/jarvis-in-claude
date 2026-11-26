@@ -73,3 +73,36 @@ bm_george 26, bm_lewis 27, so the old Jarvis blend can be rebuilt as a custom `v
 **Estimated spoken turn:** a 0.7 s end-of-speech wait, 0.1 s transcription, about 0.9 s for Claude's first piece,
 and 0.3 s for the voice, about **2.0 s** to first audio, against 2.7–3.0 s on the jarvis-voice engine and 5–12 s
 with its hooks.
+
+## M4: barge-in (2026-11-26, MacBook Air built-in speakers and microphone, volume 25%)
+
+**Echo cancellation (decibri `aec: 'tau'`) barely works on these speakers.** `spike/aec-check.ts` plays the same
+reply through the speaker with the microphone open, and reports the share of playback that Silero scores as
+speech. Without cancellation it is 80–94%. With cancellation, and the reference paced to the playhead (pushing
+ahead can lose the delay for good, per decibri's changelog), the canceller finds the delay (about 45–55 ms) but
+ERLE stays at 0–6 dB. Some sentences fall to 0–17% once it converges, but it doesn't hold: over three replies in one
+session, 30–90% of every sentence still scored as speech. Turning off the 80 Hz highpass, a 400 ms tail, or
+`suppression: 'off'` made no reliable difference. The likely cause: the speakers sit centimetres from the microphone,
+behind Apple's speaker processing, which a linear canceller can't model.
+
+**So barge-in checks the words, not just the sound** (`spike/barge-in-check.ts`, real speaker, microphone,
+canceller and Moonshine). After 250 ms of speech over Jarvis, the last 1.5 s is transcribed and compared with what
+he just said:
+
+| rule | false barge-ins (Jarvis alone, 6 replies) | real interruptions caught (3) |
+|---|---|---|
+| any speech that isn't Jarvis's words | **5 of 6**: the echo transcribes as new-looking words ("Circumstruction", "dons dons dons", "bill bill bill…") | — (Jarvis had already cut himself off) |
+| **only a stop word Jarvis didn't say (loudspeakers)** | **0** | 0: a second voice from the *same* speaker, overlapping him, transcribes as nonsense |
+
+The "user" in that test came from the same laptop speaker at the same level as Jarvis, which is the worst
+case. A person near the laptop reaches the microphone directly, so this needs a real-voice test. Headphones
+have no echo, so there any speech over Jarvis cuts him off ("auto" picks by output device name). Once he is
+cut off, what the user said transcribes cleanly ("Hold on, Jarvis.", "Wait stop use the other database instead").
+
+**Apple voice processing (AVAudioEngine `setVoiceProcessingEnabled`, FaceTime's canceller): inconclusive.**
+`spike/vpio/` builds a Swift helper that plays through the voice-processed output and records the microphone. It
+needs the output node enabled explicitly (otherwise initialisation fails with -10875) and delivers 7 channels at
+96 kHz. Its recordings came out very quiet (peaks around 0.07, as loud in the silent first second as during
+playback) and transcribed as nonsense even with processing off, so the capture path is suspect, and this measured
+nothing reliable yet. It is the most promising next step for loudspeakers: a native helper that owns both speaker
+and microphone.

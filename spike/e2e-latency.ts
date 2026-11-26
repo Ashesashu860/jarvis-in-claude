@@ -24,16 +24,16 @@ class MutedSink implements AudioSink {
 
 class ScriptedMic implements MicSource {
   readonly sampleRate = 16000;
-  private frame: ((s: Float32Array) => void) | null = null;
+  private frame: ((s: Float32Array, vadScore: number) => void) | null = null;
   private speech: (() => void) | null = null;
   private silence: (() => void) | null = null;
-  onFrame(l: (s: Float32Array) => void): void { this.frame = l; }
+  onFrame(l: (s: Float32Array, vadScore: number) => void): void { this.frame = l; }
   onSpeech(l: () => void): void { this.speech = l; }
   onSilence(l: () => void): void { this.silence = l; }
   close(): void { /* scripted */ }
   utter(samples: Float32Array): void {
     this.speech?.();
-    for (let i = 0; i < samples.length; i += 480) this.frame?.(samples.subarray(i, i + 480));
+    for (let i = 0; i < samples.length; i += 480) this.frame?.(samples.subarray(i, i + 480), 1);
     this.silence?.();
   }
 }

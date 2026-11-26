@@ -16,6 +16,14 @@ export const ConfigSchema = z.object({
   listen: z.boolean().default(true),
   /** Silence, in milliseconds, that means you've finished speaking. */
   endOfSpeechMs: z.number().int().min(200).max(3000).default(700),
+  /**
+   * Talking over Jarvis. "auto": any speech cuts him off on headphones, only "stop", "wait",
+   * "hold on", "Jarvis"… on loudspeakers (whose echo would otherwise cut him off). "anySpeech" or
+   * "stopWord" force one; "off": he always finishes.
+   */
+  bargeIn: z.enum(["auto", "anySpeech", "stopWord", "off"]).default("auto"),
+  /** How long you must talk over Jarvis before he stops, so a cough doesn't cut him off. */
+  bargeInMs: z.number().int().min(100).max(2000).default(250),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 

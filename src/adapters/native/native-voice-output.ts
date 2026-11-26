@@ -21,8 +21,10 @@ export interface NativeVoiceOptions {
   readonly synth: Synthesizer;
   readonly sink: AudioSink;
   readonly clock: Clock;
-  /** Everything played goes here too, e.g. as the echo canceller's reference (M4). */
-  readonly onAudio?: (samples: Float32Array, sampleRate: number) => void;
+  /** Everything played goes here too, with the clock time it starts playing: the echo canceller's reference. */
+  readonly onAudio?: (samples: Float32Array, sampleRate: number, startAt: number) => void;
+  /** Called when playback is cut off, so the echo reference stops too. */
+  readonly onHush?: () => void;
   readonly onError?: (message: string) => void;
 }
 
@@ -34,6 +36,7 @@ export class NativeVoiceOutput implements SpeechOutput {
   private gen = 0;
   private playhead = 0; // clock time at which everything queued so far has played
   private working = false;
+  private spoken: { text: string; until: number }[] = []; // recent pieces, for the echo filter
 
   constructor(private readonly opts: NativeVoiceOptions) {}
 
@@ -49,9 +52,17 @@ export class NativeVoiceOutput implements SpeechOutput {
     this.started.clear();
     this.opts.sink.stop();
     this.playhead = this.opts.clock.now();
+    this.opts.onHush?.();
   }
 
-  /** Is anything playing or about to? (Used to keep the microphone from hearing Jarvis, until M4.) */
+  /** What Jarvis has said, playing now or finished within the last `windowMs`. */
+  recentSpeech(windowMs = 4000): string {
+    const since = this.opts.clock.now() - windowMs;
+    this.spoken = this.spoken.filter((p) => p.until >= since);
+    return this.spoken.map((p) => p.text).join(" ");
+  }
+
+  /** Is anything playing or about to? (Speech heard now may be the user talking over Jarvis.) */
   isSpeaking(): boolean {
     return this.working || this.queue.length > 0 || this.opts.clock.now() < this.playhead;
   }
@@ -100,8 +111,10 @@ export class NativeVoiceOutput implements SpeechOutput {
     const { clock, sink, synth } = this.opts;
     const startAt = Math.max(clock.now(), this.playhead);
     this.playhead = startAt + (samples.length / synth.sampleRate) * 1000;
+    this.spoken.push({ text, until: this.playhead });
     await sink.write(samples);
-    this.opts.onAudio?.(samples, synth.sampleRate);
+    if (item.gen !== this.gen) return; // hushed while queuing
+    this.opts.onAudio?.(samples, synth.sampleRate, startAt);
     const turnId = item.turnId;
     if (turnId && !this.started.has(turnId)) {
       this.started.add(turnId);

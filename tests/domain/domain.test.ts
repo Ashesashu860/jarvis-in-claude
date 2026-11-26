@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { foreignWords, isCuttingIn, isEcho } from "../../src/domain/echo.js";
 import { parseIntent } from "../../src/domain/intents.js";
 import { classify } from "../../src/domain/permission-policy.js";
 import { SentenceChunker } from "../../src/domain/sentence-chunker.js";
@@ -147,5 +148,38 @@ describe("SentenceChunker: a quick first piece", () => {
 
   it("leaves a short opening alone", () => {
     expect(new SentenceChunker().push("Certainly, sir. More")).toEqual(["Certainly, sir."]);
+  });
+});
+
+describe("isEcho", () => {
+  const said = "Certainly, sir. I've updated the config and the tests pass.";
+  it("recognises Jarvis's own words coming back through the microphone", () => {
+    expect(isEcho("I've updated the config", said)).toBe(true);
+    expect(isEcho("the tests pass sir", said)).toBe(true);
+  });
+  it("lets the user's own words through, even with a few of Jarvis's in them", () => {
+    expect(isEcho("stop", said)).toBe(false);
+    expect(isEcho("wait, revert the config change", said)).toBe(false);
+    expect(isEcho("anything", "")).toBe(false);
+    expect(isEcho("", said)).toBe(false);
+  });
+});
+
+describe("isCuttingIn", () => {
+  const said = "Certainly, sir. I have read the configuration file and the three tests that cover it.";
+  it("forgives small recognition errors in Jarvis's echo", () => {
+    expect(foreignWords("I have read the configur files", said)).toEqual([]);
+    expect(foreignWords("the three test that covered it", said)).toEqual([]);
+  });
+  it("on loudspeakers, needs a stop word Jarvis didn't say", () => {
+    expect(isCuttingIn("the configuration hold on jarvis", said, "stopWord")).toBe(true);
+    expect(isCuttingIn("wait", said, "stopWord")).toBe(true);
+    expect(isCuttingIn("circumstruction of the mother body", said, "stopWord")).toBe(false); // garbled echo
+    expect(isCuttingIn("please wait", "Please wait while I build it.", "stopWord")).toBe(false); // his own "wait"
+  });
+  it("on headphones, a fair share of new words is enough", () => {
+    expect(isCuttingIn("actually use the other file", said, "anySpeech")).toBe(true);
+    expect(isCuttingIn("I have read the configuration file", said, "anySpeech")).toBe(false);
+    expect(isCuttingIn("bill bill bill bill", said, "anySpeech")).toBe(false); // a recogniser stuck on one word
   });
 });

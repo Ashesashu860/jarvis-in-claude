@@ -14,7 +14,8 @@ Built on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk), sher
 | M1 skeleton: typed conversation, resumes after restart, timing log | done |
 | M2 mouth: replies spoken as they stream | done |
 | M3 ears + native engine: microphone, Moonshine, Kokoro, all in Node (jarvis-voice no longer needed) | **done** |
-| M4 barge-in (talk over Jarvis), M5 spoken permissions, M6 polish | next |
+| M4 barge-in: talk over Jarvis to cut him off (any speech on headphones; "stop", "wait", "hold on" on loudspeakers) | **done**, needs a real-voice test |
+| M5 spoken permissions, M6 polish | next |
 
 ## Install and use
 
@@ -29,7 +30,9 @@ npm start -- --model opus
 ```
 
 macOS asks for **microphone access** for your terminal the first time. A short pause (0.7 s, `endOfSpeechMs`)
-ends your turn. Until M4, Jarvis doesn't listen while it's talking. **Ctrl+C** cuts a reply off;
+ends your turn. To cut Jarvis off, talk over him: on headphones anything you say does it; on loudspeakers
+(where he'd hear himself) say "stop", "wait", "hold on" or "Jarvis", then carry on with what you want.
+`"bargeIn"` in the config forces `"anySpeech"`, `"stopWord"` or `"off"`. **Ctrl+C** also cuts a reply off;
 **Ctrl+C twice** quits. Say "new conversation", "use opus", "plan mode", "stop" or "goodbye".
 
 Reading and searching are allowed; edits and commands need approval, which arrives in M5, so for now

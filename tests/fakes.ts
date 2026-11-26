@@ -110,22 +110,28 @@ export class FakeSink {
 /** A scripted microphone: tests push frames and speech/silence edges. */
 export class FakeMic {
   readonly sampleRate = 1000;
-  private frameL: ((s: Float32Array) => void)[] = [];
+  private frameL: ((s: Float32Array, vadScore: number) => void)[] = [];
   private speechL: (() => void)[] = [];
   private silenceL: (() => void)[] = [];
   closed = false;
-  onFrame(l: (s: Float32Array) => void): void { this.frameL.push(l); }
+  onFrame(l: (s: Float32Array, vadScore: number) => void): void { this.frameL.push(l); }
   onSpeech(l: () => void): void { this.speechL.push(l); }
   onSilence(l: () => void): void { this.silenceL.push(l); }
   close(): void { this.closed = true; }
   /** One utterance: `ms` of audio framed in 10 ms chunks between speech and silence. */
-  utter(ms: number): void {
-    for (const l of this.speechL) l();
-    for (let i = 0; i < ms / 10; i++) for (const l of this.frameL) l(new Float32Array(10).fill(0.1));
-    for (const l of this.silenceL) l();
+  utter(ms: number, vadScore = 0.9): void {
+    this.startSpeech();
+    this.speech(ms, vadScore);
+    this.endSpeech();
+  }
+  startSpeech(): void { for (const l of this.speechL) l(); }
+  endSpeech(): void { for (const l of this.silenceL) l(); }
+  /** `ms` of speech-like frames, each with this detector score. */
+  speech(ms: number, vadScore = 0.9): void {
+    for (let i = 0; i < ms / 10; i++) for (const l of this.frameL) l(new Float32Array(10).fill(0.1), vadScore);
   }
   frames(ms: number): void {
-    for (let i = 0; i < ms / 10; i++) for (const l of this.frameL) l(new Float32Array(10));
+    for (let i = 0; i < ms / 10; i++) for (const l of this.frameL) l(new Float32Array(10), 0);
   }
 }
 

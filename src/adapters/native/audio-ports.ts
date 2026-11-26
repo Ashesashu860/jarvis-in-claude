@@ -23,7 +23,8 @@ export interface Transcriber {
 /** A live microphone with voice activity detection: frames, plus speech/silence edges. */
 export interface MicSource {
   readonly sampleRate: number;
-  onFrame(listener: (samples: Float32Array) => void): void;
+  /** Each frame with the detector's speech probability for it (0–1). */
+  onFrame(listener: (samples: Float32Array, vadScore: number) => void): void;
   onSpeech(listener: () => void): void;
   onSilence(listener: () => void): void;
   close(): void;

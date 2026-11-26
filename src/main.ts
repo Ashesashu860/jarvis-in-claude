@@ -13,10 +13,11 @@ import { ConsoleOutput } from "./adapters/cli/console-output.js";
 import { KeyboardInput } from "./adapters/cli/keyboard-input.js";
 import { MirroredOutput } from "./adapters/cli/mirrored-output.js";
 import { defaultPaths, loadConfig, type Config } from "./adapters/config/file-config.js";
-import { DecibriMic, DecibriSink } from "./adapters/native/decibri-audio.js";
+import { DecibriMic, DecibriSink, outputIsHeadphones } from "./adapters/native/decibri-audio.js";
 import { MicInput } from "./adapters/native/mic-input.js";
 import { installModels, missingModels, modelsDir } from "./adapters/native/models.js";
 import { NativeVoiceOutput } from "./adapters/native/native-voice-output.js";
+import { PacedReference } from "./adapters/native/paced-reference.js";
 import { KokoroSynthesizer, MoonshineTranscriber } from "./adapters/native/sherpa-engine.js";
 import { FileSessionStore } from "./adapters/store/file-session-store.js";
 import { systemClock } from "./adapters/system-clock.js";
@@ -42,8 +43,12 @@ Usage: jarvis-rt [--new] [--type] [--text] [--model opus|sonnet|haiku] [--cwd DI
   --cwd        directory Claude works in (default: current)
   -h, --help   show this help
 
-Speak after "Listening…"; a short pause ends your turn. Ctrl+C cuts a reply off; Ctrl+C twice quits.
+Speak after "Listening…"; a short pause ends your turn. To cut Jarvis off, talk over him (on loudspeakers,
+say "stop", "wait" or "hold on"), or press Ctrl+C. Ctrl+C twice quits.
 Say "new conversation", "use opus", "plan mode", "stop" or "goodbye".`;
+
+/** Kokoro's output rate: the echo canceller's reference rate. */
+const KOKORO_RATE = 24000;
 
 const log = (line: string) => process.stderr.write(`${line}\n`);
 
@@ -62,6 +67,8 @@ interface Speech {
   readonly input: SpeechInput;
   readonly output: SpeechOutput;
   readonly listening: boolean;
+  /** How talking over Jarvis works, to tell the user. */
+  readonly bargeIn: string | null;
 }
 
 /** Build the voice and the ears, falling back to text and typing when the models aren't installed. */
@@ -72,25 +79,41 @@ async function buildSpeech(config: Config, flags: { type: boolean; text: boolean
   const root = modelsDir();
   if ((wantVoice || wantMic) && missingModels(root).length > 0) {
     log("The voice and speech models aren't installed yet: run `jarvis-rt setup`. Using text for now.");
-    return { input: new KeyboardInput(), output: transcript, listening: false };
+    return { input: new KeyboardInput(), output: transcript, listening: false, bargeIn: null };
   }
 
+  // What the speaker plays is fed, at playback pace, to the microphone's echo canceller.
+  let mic: DecibriMic | null = null;
+  const reference = new PacedReference({ push: (samples) => mic?.push(samples) }, systemClock);
   let voice: NativeVoiceOutput | null = null;
   if (wantVoice) {
     const synth = await KokoroSynthesizer.load(root, config.speaker, config.speed);
-    voice = new NativeVoiceOutput({ synth, sink: new DecibriSink(synth.sampleRate), clock: systemClock, onError: log });
+    voice = new NativeVoiceOutput({
+      synth, sink: new DecibriSink(synth.sampleRate), clock: systemClock, onError: log,
+      onAudio: (samples, rate, startAt) => reference.schedule(samples, rate, startAt),
+      onHush: () => reference.clear(),
+    });
     await voice.prepare();
   }
   const output: SpeechOutput = voice ? new MirroredOutput(voice, [transcript]) : transcript;
 
-  if (!wantMic) return { input: new KeyboardInput(), output, listening: false };
-  const [mic, transcriber] = await Promise.all([
-    DecibriMic.open({ endOfSpeechMs: config.endOfSpeechMs }),
+  if (!wantMic) return { input: new KeyboardInput(), output, listening: false, bargeIn: null };
+  const [openedMic, transcriber] = await Promise.all([
+    DecibriMic.open({ endOfSpeechMs: config.endOfSpeechMs, ...(voice ? { echoReferenceRate: KOKORO_RATE } : {}) }),
     MoonshineTranscriber.load(root),
   ]);
-  // Until barge-in (M4), the microphone ignores speech that starts while Jarvis is talking.
-  const input = new MicInput({ mic, transcriber, clock: systemClock, muted: () => voice?.isSpeaking() ?? false });
-  return { input, output, listening: true };
+  mic = openedMic;
+  const rule = config.bargeIn === "auto" ? (outputIsHeadphones() ? "anySpeech" : "stopWord") : config.bargeIn;
+  const input = new MicInput({
+    mic, transcriber, clock: systemClock,
+    speaking: () => voice?.isSpeaking() ?? false,
+    recentSpeech: () => voice?.recentSpeech() ?? "",
+    bargeIn: !voice || rule === "off" ? false : { afterMs: config.bargeInMs, rule },
+  });
+  const bargeIn = !voice || rule === "off" ? null
+    : rule === "anySpeech" ? "talk over me to cut me off"
+    : "say \"stop\", \"wait\" or \"hold on\" to cut me off (on loudspeakers I'd hear myself)";
+  return { input, output, listening: true, bargeIn };
 }
 
 async function main(): Promise<number> {
@@ -140,7 +163,7 @@ async function main(): Promise<number> {
 
   log(`jarvis-rt · ${model} · ${cwd}${resume ? " · resuming the last conversation" : ""}`);
   log("Loading the voice and speech models…");
-  const { input, output, listening } = await buildSpeech(config, { type: values.type, text: values.text });
+  const { input, output, listening, bargeIn } = await buildSpeech(config, { type: values.type, text: values.text });
 
   const service = new ConversationService({
     input,
@@ -165,6 +188,7 @@ async function main(): Promise<number> {
   });
 
   log(listening ? "Listening… speak whenever you're ready." : "Type a prompt and press Enter.");
+  if (bargeIn) log(`While I talk, ${bargeIn}.`);
   await service.run(stop.signal);
   return 0;
 }
