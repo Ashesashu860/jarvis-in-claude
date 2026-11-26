@@ -4,6 +4,7 @@ import sherpa from "sherpa-onnx-node";
 import type { Synthesizer, Transcriber } from "./audio-ports.js";
 import { KokoroPhonemizer } from "./kokoro-phonemizer.js";
 import { KOKORO, MOONSHINE, VOICES, type VoiceName } from "./models.js";
+import { BLEND_SLOT, blendedVoicesFile, type Blend } from "./voice-blend.js";
 
 /** 4 threads measured fastest on Apple Silicon (305 ms for "Certainly, sir."; see spike/FINDINGS.md). */
 const THREADS = 4;
@@ -13,17 +14,20 @@ export class KokoroSynthesizer implements Synthesizer {
 
   private constructor(private readonly tts: sherpa.OfflineTts, private readonly sid: number, private readonly speed: number) {}
 
-  static async load(root: string, voice: VoiceName, speed: number): Promise<KokoroSynthesizer> {
+  /** `voice`: a stock voice, or a blend of them (see voice-blend.ts). */
+  static async load(root: string, voice: VoiceName | Blend, speed: number): Promise<KokoroSynthesizer> {
     const dir = join(root, KOKORO.dir);
+    const blended = typeof voice !== "string";
+    const voices = blended ? blendedVoicesFile(root, voice) : join(dir, "voices.bin");
     const tts = await sherpa.OfflineTts.createAsync({
       model: {
-        kokoro: { model: join(dir, "model.onnx"), voices: join(dir, "voices.bin"), tokens: join(dir, "tokens.txt"),
+        kokoro: { model: join(dir, "model.onnx"), voices, tokens: join(dir, "tokens.txt"),
                   lexicon: join(dir, "lexicon-gb-en.txt") },
         numThreads: THREADS, debug: false, provider: "cpu",
       },
       maxNumSentences: 1,
     });
-    return new KokoroSynthesizer(tts, VOICES[voice], speed);
+    return new KokoroSynthesizer(tts, blended ? BLEND_SLOT : VOICES[voice], speed);
   }
 
   get sampleRate(): number {

@@ -187,3 +187,30 @@ export class ClaudeAgentBrain implements AgentBrain, AgentControl {
     }
   }
 }
+
+/** How Claude Code is signed in, for `jarvis-rt doctor`. Sends no prompt, so it costs nothing. */
+export interface ClaudeLogin { readonly provider: string; readonly plan?: string; readonly via?: string }
+
+export async function claudeLogin(timeoutMs = 30_000, queryFn: QueryFn = sdkQuery): Promise<ClaudeLogin> {
+  const inbox = new AsyncQueue<SDKUserMessage>(); // never written to: the session starts but nothing is asked
+  const q = queryFn({ prompt: inbox, options: { settingSources: [] } });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const info = await Promise.race([
+      q.accountInfo(),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => { reject(new Error("Claude Code didn't answer in time")); }, timeoutMs); }),
+    ]);
+    const firstParty = (info.apiProvider ?? "firstParty") === "firstParty";
+    const signedIn = Boolean(info.email ?? info.subscriptionType ?? info.tokenSource ?? info.apiKeySource);
+    if (firstParty && !signedIn) throw new Error("not signed in");
+    return {
+      provider: info.apiProvider ?? "firstParty",
+      ...(info.subscriptionType ? { plan: info.subscriptionType } : {}),
+      ...(info.tokenSource ?? info.apiKeySource ? { via: info.tokenSource ?? info.apiKeySource } : {}),
+    };
+  } finally {
+    clearTimeout(timer);
+    inbox.close();
+    q.close();
+  }
+}

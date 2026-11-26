@@ -16,19 +16,25 @@ Built on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk), sher
 | M3 ears + native engine: microphone, Moonshine, Kokoro, all in Node (jarvis-voice no longer needed) | **done** |
 | M4 barge-in: talk over Jarvis to cut him off (any speech on headphones; "stop", "wait", "hold on" on loudspeakers) | **done** (real voice: "hold on" works on laptop speakers) |
 | M5 spoken permissions ("Shall I, sir?" / yes, no, always) and narration of reads and searches | **done** |
-| M6 polish: `doctor`, the Jarvis voice blend, CI, install script | next |
+| M6 polish: `jarvis-rt doctor`, the Jarvis voice blend, CI workflow, install script | **done** |
 
 ## Install and use
 
+Needs macOS, Node.js 22+, and Claude Code signed in once (`claude`).
+
 ```bash
-npm install
-npm start -- setup        # downloads the voice and speech models once, about 440 MB, to ~/.cache/jarvis-rt/models
-npm start                 # speak after "Listening…"; resumes the last conversation in this folder
-npm start -- --new        # start afresh
-npm start -- --type       # type prompts instead of speaking
-npm start -- --text       # print replies only, no voice
-npm start -- --model opus
+scripts/install.sh        # dependencies, build, `jarvis-rt` in ~/.local/bin, models (about 440 MB, once), doctor
+jarvis-rt doctor          # check models, voice, speech recognition, speaker, microphone and Claude login
+jarvis-rt                 # speak after "Listening…"; resumes the last conversation in this folder
+jarvis-rt --new           # start afresh
+jarvis-rt --type          # type prompts instead of speaking
+jarvis-rt --text          # print replies only, no voice
+jarvis-rt --model opus
+scripts/install.sh --uninstall   # remove the command (models and settings are kept)
 ```
+
+From the checkout without installing: `npm install`, `npm start -- setup`, `npm start`. After pulling changes,
+re-run `scripts/install.sh` (or `npm run build`): the command runs the built code.
 
 macOS asks for **microphone access** for your terminal the first time. A short pause (0.7 s, `endOfSpeechMs`)
 ends your turn. To cut Jarvis off, talk over him: on headphones anything you say does it; on loudspeakers
@@ -42,9 +48,10 @@ Edits and commands are asked about out loud ("I'd like to run the test suite. Sh
 No answer in 30 s is a no, and so is "stop". Claude Code itself lets read-only commands (`ls`, `uname`, …)
 run without asking. Destructive commands (`rm -rf ~`, `git push --force`, `sudo`, …) are always refused.
 
-Settings, in `~/.config/jarvis-rt/config.json`: `address` (sir), `model` (sonnet), `speaker`
-(bm_daniel, bm_george, bm_fable, bm_lewis, bf_emma, …), `speed` (1.05), `endOfSpeechMs` (700), `voice`,
-`listen`, `autoAllow`. Per-turn timings are logged to `~/.local/state/jarvis-rt/timings.jsonl`.
+Settings, in `~/.config/jarvis-rt/config.json`: `address` (sir), `model` (sonnet), `speaker` (`jarvis`, or a
+stock voice: bm_daniel, bm_george, bm_fable, bm_lewis, bf_emma, …), `blend` (the `jarvis` voice, by default
+`bm_daniel:0.6,bm_george:0.25,bm_fable:0.15`, the original jarvis-voice mix of stock Apache-2.0 Kokoro voices),
+`speed` (1.05), `endOfSpeechMs` (700), `bargeIn` (auto), `bargeInMs` (250), `voice`, `listen`, `autoAllow`. Per-turn timings are logged to `~/.local/state/jarvis-rt/timings.jsonl`.
 
 ## How it works
 

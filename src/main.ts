@@ -18,11 +18,13 @@ import { MicInput } from "./adapters/native/mic-input.js";
 import { installModels, missingModels, modelsDir } from "./adapters/native/models.js";
 import { NativeVoiceOutput } from "./adapters/native/native-voice-output.js";
 import { PacedReference } from "./adapters/native/paced-reference.js";
+import { parseBlend } from "./adapters/native/voice-blend.js";
 import { KokoroSynthesizer, MoonshineTranscriber } from "./adapters/native/sherpa-engine.js";
 import { FileSessionStore } from "./adapters/store/file-session-store.js";
 import { systemClock } from "./adapters/system-clock.js";
 import { JsonlTimingLog } from "./adapters/telemetry/jsonl-timing-log.js";
 import { DEFAULT_RULES } from "./domain/permission-policy.js";
+import { doctor } from "./doctor.js";
 
 const VOICE_STYLE = (address: string) =>
   "Your replies are read aloud as they stream. Open with a very short sentence (under eight words) that answers " +
@@ -35,6 +37,7 @@ const HELP = `jarvis-rt: talk to Claude Code in real time
 
 Usage: jarvis-rt [--new] [--type] [--text] [--model opus|sonnet|haiku] [--cwd DIR]
        jarvis-rt setup        download the voice and speech models (about 440 MB, once)
+       jarvis-rt doctor       check models, voice, microphone, speaker and Claude login
 
   --new        start a new conversation instead of resuming the last one here
   --type       type prompts instead of speaking them
@@ -88,7 +91,8 @@ async function buildSpeech(config: Config, flags: { type: boolean; text: boolean
   const reference = new PacedReference({ push: (samples) => mic?.push(samples) }, systemClock);
   let voice: NativeVoiceOutput | null = null;
   if (wantVoice) {
-    const synth = await KokoroSynthesizer.load(root, config.speaker, config.speed);
+    const voiceChoice = config.speaker === "jarvis" ? parseBlend(config.blend) : config.speaker;
+    const synth = await KokoroSynthesizer.load(root, voiceChoice, config.speed);
     voice = new NativeVoiceOutput({
       synth, sink: new DecibriSink(synth.sampleRate), clock: systemClock, onError: log,
       onAudio: (samples, rate, startAt) => reference.schedule(samples, rate, startAt),
@@ -134,6 +138,7 @@ async function main(): Promise<number> {
     return 0;
   }
   if (positionals[0] === "setup") return setup();
+  if (positionals[0] === "doctor") return doctor((line) => { console.log(line); });
   if (positionals.length > 0) {
     log(`Unknown command "${positionals.join(" ")}". Try jarvis-rt --help.`);
     return 2;

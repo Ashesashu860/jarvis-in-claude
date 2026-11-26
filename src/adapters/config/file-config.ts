@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import { JARVIS_BLEND, parseBlend } from "../native/voice-blend.js";
 
 export const ConfigSchema = z.object({
   address: z.string().min(1).default("sir"),
@@ -9,8 +10,11 @@ export const ConfigSchema = z.object({
   autoAllow: z.array(z.string()).default(["Read", "Glob", "Grep", "WebSearch", "WebFetch"]),
   /** Speak replies aloud (false: text only). */
   voice: z.boolean().default(true),
-  /** Kokoro voice: bm_daniel, bm_george, bm_fable, bm_lewis, bf_emma, … */
-  speaker: z.enum(["bm_daniel", "bm_fable", "bm_george", "bm_lewis", "bf_alice", "bf_emma", "bf_isabella", "bf_lily"]).default("bm_daniel"),
+  /** "jarvis" (the blend below), or a stock Kokoro voice: bm_daniel, bm_george, bm_fable, bm_lewis, bf_emma, … */
+  speaker: z.enum(["jarvis", "bm_daniel", "bm_fable", "bm_george", "bm_lewis", "bf_alice", "bf_emma", "bf_isabella", "bf_lily"]).default("jarvis"),
+  /** The "jarvis" voice: a mix of stock voices, "voice:weight,…". */
+  blend: z.string().default(JARVIS_BLEND).refine((b) => { try { parseBlend(b); return true; } catch { return false; } },
+    { error: 'a blend is "voice:weight,…" of bm_daniel, bm_george, bm_fable, bm_lewis, bf_alice, bf_emma, bf_isabella, bf_lily' }),
   speed: z.number().min(0.5).max(2).default(1.05),
   /** Listen through the microphone (false: type prompts). */
   listen: z.boolean().default(true),
