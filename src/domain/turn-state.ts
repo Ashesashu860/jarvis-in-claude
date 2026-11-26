@@ -7,13 +7,23 @@
  * - A prompt that arrives while a reply is running (typed ahead) waits its turn, as in Claude Code.
  *   Commands ("stop", "new conversation", "use opus") act at once.
  * - Events for a turn that is no longer current (a late delta after an interrupt) are ignored.
+ * - While Jarvis waits on "Shall I…?", what the user says is the answer. "Stop" (or anything that
+ *   cuts the reply off) is a no; something that isn't an answer gets the question again, briefly.
  */
-import { parseIntent, type ModelChoice } from "./intents.js";
+import { parseAnswer, parseIntent, type Answer, type ModelChoice } from "./intents.js";
 
 export type TurnId = string;
 export interface Pending { readonly turnId: TurnId; readonly text: string }
 
-interface Busy { readonly turnId: TurnId; readonly queue: readonly Pending[]; readonly exitAfter: boolean }
+/** A permission question waiting for the user's answer. */
+export interface Question { readonly id: string; readonly text: string }
+
+interface Busy {
+  readonly turnId: TurnId;
+  readonly queue: readonly Pending[];
+  readonly exitAfter: boolean;
+  readonly asking: Question | null;
+}
 
 export type State =
   | { kind: "idle" }
@@ -29,6 +39,8 @@ export type Event =
   | { kind: "replyDone"; turnId: TurnId }
   | { kind: "replyFailed"; turnId: TurnId; message: string }
   | { kind: "playbackDone"; turnId: TurnId }
+  | { kind: "permissionAsked"; turnId: TurnId; question: Question }
+  | { kind: "permissionTimedOut"; turnId: TurnId; id: string }
   | { kind: "inputClosed" };
 
 export type Command =
@@ -38,6 +50,7 @@ export type Command =
   | { kind: "hush" }
   | { kind: "interrupt"; turnId: TurnId }
   | { kind: "acknowledge"; text: string }
+  | { kind: "answer"; id: string; answer: Answer }
   | { kind: "newSession" }
   | { kind: "setModel"; model: ModelChoice }
   | { kind: "setPermissionMode"; mode: "plan" | "default" }
@@ -57,7 +70,8 @@ function isBusy(state: State): state is Extract<State, Busy> {
 
 /** Start a reply to `next`. */
 function begin(next: Pending, queue: readonly Pending[], exitAfter: boolean): Result {
-  return [{ kind: "thinking", turnId: next.turnId, queue, exitAfter }, [{ kind: "send", turnId: next.turnId, text: next.text }]];
+  return [{ kind: "thinking", turnId: next.turnId, queue, exitAfter, asking: null },
+    [{ kind: "send", turnId: next.turnId, text: next.text }]];
 }
 
 /** The current reply is over: start the next queued prompt, exit, or listen. */
@@ -75,10 +89,24 @@ export function createReducer(persona: Persona) {
   const sir = persona.address;
 
   function cutOff(state: State): Command[] {
-    return isBusy(state) ? [{ kind: "hush" }, { kind: "interrupt", turnId: state.turnId }] : [];
+    if (!isBusy(state)) return [];
+    const refuse: Command[] = state.asking ? [{ kind: "answer", id: state.asking.id, answer: "no" }] : [];
+    return [...refuse, { kind: "hush" }, { kind: "interrupt", turnId: state.turnId }];
+  }
+
+  /** What the user said while Jarvis waits on "Shall I…?". */
+  function onAnswer(state: Extract<State, Busy>, question: Question, text: string): Result | null {
+    const answer = parseAnswer(text);
+    if (answer) return [{ ...state, asking: null }, [{ kind: "answer", id: question.id, answer }]];
+    if (parseIntent(text).kind !== "prompt") return null; // a command: handled as usual (and refuses)
+    return [state, [{ kind: "say", turnId: state.turnId, text: `Sorry, ${sir}: yes or no?` }]];
   }
 
   function onUtterance(state: State, text: string, turnId: TurnId): Result {
+    if (isBusy(state) && state.asking) {
+      const answered = onAnswer(state, state.asking, text);
+      if (answered) return answered;
+    }
     const intent = parseIntent(text);
     const stop = cutOff(state);
     switch (intent.kind) {
@@ -130,6 +158,13 @@ export function createReducer(persona: Persona) {
         return finish(state, [{ kind: "hush" }, { kind: "acknowledge", text: `I'm afraid something went wrong, ${sir}: ${event.message}` }]);
       case "playbackDone":
         return state.kind === "speaking" && state.replyDone ? finish(state) : [state, []];
+      case "permissionAsked":
+        return [{ ...state, kind: "speaking", replyDone: false, asking: event.question },
+          [{ kind: "say", turnId: event.turnId, text: event.question.text }]];
+      case "permissionTimedOut":
+        if (state.asking?.id !== event.id) return [state, []];
+        return [{ ...state, asking: null }, [{ kind: "answer", id: event.id, answer: "no" },
+          { kind: "say", turnId: event.turnId, text: `I'll take that as a no, ${sir}.` }]];
       default: {
         const unreachable: never = event;
         return unreachable;

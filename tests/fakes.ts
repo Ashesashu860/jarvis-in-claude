@@ -41,7 +41,8 @@ export class FakeBrain implements AgentBrain, AgentControl {
   readonly controls: string[] = [];
   interrupts = 0;
   private live: AsyncQueue<AgentEvent> | null = null;
-  constructor(private readonly script: (prompt: string) => AgentEvent[] | "hold") {}
+  /** A script can also be a generator, to act mid-turn (as the SDK calls canUseTool). */
+  constructor(private readonly script: (prompt: string) => AgentEvent[] | "hold" | ((signal: AbortSignal) => AsyncIterable<AgentEvent>)) {}
 
   async *send(text: string, signal: AbortSignal): AsyncIterable<AgentEvent> {
     this.prompts.push(text);
@@ -54,6 +55,7 @@ export class FakeBrain implements AgentBrain, AgentControl {
       yield* q;
       return;
     }
+    if (typeof reply === "function") { yield* reply(signal); return; }
     for (const ev of reply) yield ev;
   }
   /** Deltas that arrive late, after an interrupt was requested. */

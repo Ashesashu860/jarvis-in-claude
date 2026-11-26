@@ -3,6 +3,7 @@
  * the Agent SDK, sockets or files, and SDK types never cross this line.
  */
 import type { ModelChoice } from "../domain/intents.js";
+import type { ToolCall } from "../domain/tool-speech.js";
 import type { TurnId } from "../domain/turn-state.js";
 
 // ---------------------------------------------------------------- speech in / out
@@ -59,7 +60,7 @@ export interface AgentControl {
 
 /** Implemented by the core, called by the brain adapter when a tool needs permission. */
 export interface PermissionDecider {
-  decide(request: { tool: string; summary: string }, signal: AbortSignal):
+  decide(call: ToolCall, signal: AbortSignal):
     Promise<{ allow: true } | { allow: false; reason: string }>;
 }
 

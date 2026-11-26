@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { foreignWords, isCuttingIn, isEcho } from "../../src/domain/echo.js";
-import { parseIntent } from "../../src/domain/intents.js";
+import { parseAnswer, parseIntent } from "../../src/domain/intents.js";
+import { narration, permissionQuestion } from "../../src/domain/tool-speech.js";
 import { classify } from "../../src/domain/permission-policy.js";
 import { SentenceChunker } from "../../src/domain/sentence-chunker.js";
 import { createReducer, initialState, type Event, type State } from "../../src/domain/turn-state.js";
@@ -181,5 +182,52 @@ describe("isCuttingIn", () => {
     expect(isCuttingIn("actually use the other file", said, "anySpeech")).toBe(true);
     expect(isCuttingIn("I have read the configuration file", said, "anySpeech")).toBe(false);
     expect(isCuttingIn("bill bill bill bill", said, "anySpeech")).toBe(false); // a recogniser stuck on one word
+  });
+});
+
+describe("tool speech", () => {
+  it("asks in plain words, using Claude's own description when there is one", () => {
+    expect(permissionQuestion({ tool: "Bash", summary: "npm test", description: "Run the test suite." }, "sir"))
+      .toBe("I'd like to run the test suite. Shall I, sir?");
+    expect(permissionQuestion({ tool: "Bash", summary: "git status" }, "sir")).toBe("I'd like to run git status. Shall I, sir?");
+    expect(permissionQuestion({ tool: "Bash", summary: "a b c d e f g h i j" }, "sir")).toBe("I'd like to run a b c d e f g h, and so on. Shall I, sir?");
+    expect(permissionQuestion({ tool: "Edit", summary: "/repo/src/main.ts" }, "madam")).toBe("I'd like to edit main.ts. Shall I, madam?");
+    expect(permissionQuestion({ tool: "WebFetch", summary: "https://www.example.com/x" }, "sir")).toBe("I'd like to open example.com. Shall I, sir?");
+  });
+  it("narrates only the calls worth mentioning", () => {
+    expect(narration({ tool: "Read", summary: "/a/b/config.json" })).toBe("Reading config.json.");
+    expect(narration({ tool: "Grep", summary: "x" })).toBe("Searching the code.");
+    expect(narration({ tool: "TodoWrite", summary: "" })).toBeNull();
+  });
+});
+
+describe("parseAnswer", () => {
+  it("hears yes, no and always in their everyday forms", () => {
+    for (const t of ["Yes.", "yeah", "Sure, go ahead", "Go ahead please", "Do it", "yes sir", "OK", "y"]) expect(parseAnswer(t)).toBe("yes");
+    for (const t of ["No.", "Nope", "Don't.", "No thanks", "Not now", "No, don't", "n", "Jarvis, no"]) expect(parseAnswer(t)).toBe("no");
+    for (const t of ["Always.", "Yes, always", "Don't ask again"]) expect(parseAnswer(t)).toBe("always");
+  });
+  it("is not fooled by sentences that merely contain those words", () => {
+    for (const t of ["No idea what that does", "Yes but first explain it", "What's the weather like?", ""]) expect(parseAnswer(t)).toBeNull();
+  });
+});
+
+describe("turn reducer: asking", () => {
+  const reduce = createReducer({ address: "sir" });
+  const asking: State = { kind: "speaking", turnId: "t1", queue: [], exitAfter: false, replyDone: false, asking: { id: "q1", text: "Shall I?" } };
+  it("takes the user's words as the answer while a question waits", () => {
+    const [s, c] = reduce(asking, { kind: "utterance", text: "Yes please", turnId: "t2" });
+    expect(c).toEqual([{ kind: "answer", id: "q1", answer: "yes" }]);
+    expect(s).toMatchObject({ kind: "speaking", asking: null });
+  });
+  it("refuses when the reply is cut off while asking", () => {
+    const [, c] = reduce(asking, { kind: "bargeIn" });
+    expect(c.map((x) => x.kind)).toEqual(["answer", "hush", "interrupt"]);
+    expect(c[0]).toEqual({ kind: "answer", id: "q1", answer: "no" });
+  });
+  it("ignores a late timeout for a question already answered", () => {
+    const [s, c] = reduce({ ...asking, asking: null }, { kind: "permissionTimedOut", turnId: "t1", id: "q1" });
+    expect(c).toEqual([]);
+    expect(s).toMatchObject({ asking: null });
   });
 });

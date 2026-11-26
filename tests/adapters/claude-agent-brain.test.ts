@@ -6,6 +6,7 @@ import type { Options, Query, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { describe, expect, it } from "vitest";
 import { ClaudeAgentBrain, summarizeToolInput, type QueryFn } from "../../src/adapters/brain/claude-agent-brain.js";
 import { PolicyPermissionDecider } from "../../src/application/policy-permission-decider.js";
+import type { PermissionDecider } from "../../src/application/ports.js";
 import type { AgentEvent } from "../../src/application/ports.js";
 
 const delta = (text: string, parent: string | null = null) =>
@@ -46,10 +47,10 @@ async function turn(brain: ClaudeAgentBrain, text: string): Promise<AgentEvent[]
   return out;
 }
 
-function makeBrain(fn: QueryFn, sessions: string[] = []) {
+function makeBrain(fn: QueryFn, permission: PermissionDecider = new PolicyPermissionDecider(), sessions: string[] = []) {
   return new ClaudeAgentBrain({
     model: "sonnet", cwd: "/tmp", systemAppend: "Be brief.",
-    permission: new PolicyPermissionDecider(), resume: "old-session", onSession: (id) => sessions.push(id), queryFn: fn,
+    permission, resume: "old-session", onSession: (id) => sessions.push(id), queryFn: fn,
   });
 }
 
@@ -60,7 +61,7 @@ describe("ClaudeAgentBrain", () => {
       [delta("Again."), done()],
     ]);
     const sessions: string[] = [];
-    const brain = makeBrain(fn, sessions);
+    const brain = makeBrain(fn, new PolicyPermissionDecider(), sessions);
     expect(await turn(brain, "hi")).toEqual([
       { kind: "text", delta: "Hello " },
       { kind: "tool", name: "Read", summary: "src/main.ts" },
@@ -104,6 +105,14 @@ describe("ClaudeAgentBrain", () => {
     await expect(canUseTool("Bash", { command: "rm -rf ~" }, { signal } as never)).resolves.toMatchObject({ behavior: "deny" });
     await expect(canUseTool("Edit", { file_path: "a.ts" }, { signal } as never)).resolves.toMatchObject({ behavior: "deny" });
     await expect(canUseTool("Read", { file_path: "a.ts" }, { signal } as never)).resolves.toMatchObject({ behavior: "allow" });
+  });
+
+  it("passes Claude's description of the call to the decider", async () => {
+    const calls: unknown[] = [];
+    const { fn, seen } = scriptedQuery([]);
+    makeBrain(fn, { decide: (c) => { calls.push(c); return Promise.resolve({ allow: true }); } }).start();
+    await seen.options?.canUseTool?.("Bash", { command: "npm test", description: "Run tests" }, { signal: new AbortController().signal } as never);
+    expect(calls).toEqual([{ tool: "Bash", summary: "npm test", description: "Run tests" }]);
   });
 
   it("summarises tool inputs for speech", () => {

@@ -2,7 +2,9 @@
  * Runs the conversation: feeds events from the ports into the reducer and carries out the
  * commands it returns. All decisions live in the domain; this class only does the I/O.
  */
+import type { Answer } from "../domain/intents.js";
 import { SentenceChunker } from "../domain/sentence-chunker.js";
+import { narration, permissionQuestion, type ToolCall } from "../domain/tool-speech.js";
 import { createReducer, initialState, type Command, type Event, type Persona, type Reducer, type State, type TurnId } from "../domain/turn-state.js";
 import { AsyncQueue } from "./async-queue.js";
 import type { AgentBrain, AgentControl, Clock, SpeechInput, SpeechOutput, TimingSink, TurnTimings } from "./ports.js";
@@ -17,12 +19,21 @@ export interface ConversationDeps {
   readonly newId: () => string;
   readonly persona: Persona;
   readonly newChunker?: () => SentenceChunker;
+  /** How long a permission question waits for an answer before it counts as no. */
+  readonly askTimeoutMs?: number;
 }
 
 interface ActiveTurn {
   readonly turnId: TurnId;
   readonly abort: AbortController;
   readonly chunker: SentenceChunker;
+  /** Narrations already spoken this turn, so a run of searches says "Searching the code." once. */
+  readonly narrated: Set<string>;
+}
+
+interface PendingAsk {
+  readonly resolve: (answer: Answer) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
 }
 
 /** What we learn about a turn as it runs; becomes a TurnTimings record when it ends. */
@@ -49,6 +60,7 @@ export class ConversationService {
   private active: ActiveTurn | null = null;
   private readonly metrics = new Map<TurnId, Metrics>();
   private exiting = false;
+  private readonly asks = new Map<string, PendingAsk>();
 
   constructor(private readonly deps: ConversationDeps) {
     this.reduce = createReducer(deps.persona);
@@ -56,6 +68,39 @@ export class ConversationService {
 
   get currentState(): State {
     return this.state;
+  }
+
+  /**
+   * Ask the user about a tool call, out loud, in the current turn. Resolves with their answer;
+   * "no" if there's no turn, the turn is cut off, or nobody answers in time.
+   */
+  ask(call: ToolCall, signal: AbortSignal): Promise<Answer> {
+    const turn = this.active;
+    if (!turn || signal.aborted) return Promise.resolve("no");
+    const id = this.deps.newId();
+    // What Claude said before the call is spoken before the question.
+    for (const text of turn.chunker.flush()) this.events.push({ kind: "sentence", turnId: turn.turnId, text });
+    return new Promise<Answer>((resolve) => {
+      const timer = setTimeout(() => {
+        this.events.push({ kind: "permissionTimedOut", turnId: turn.turnId, id });
+      }, this.deps.askTimeoutMs ?? 30_000);
+      this.asks.set(id, { resolve, timer });
+      signal.addEventListener("abort", () => { this.settle(id, "no"); }, { once: true });
+      const question = { id, text: permissionQuestion(call, this.deps.persona.address) };
+      this.events.push({ kind: "permissionAsked", turnId: turn.turnId, question });
+    });
+  }
+
+  private settle(id: string, answer: Answer): void {
+    const pending = this.asks.get(id);
+    if (!pending) return;
+    this.asks.delete(id);
+    clearTimeout(pending.timer);
+    pending.resolve(answer);
+  }
+
+  private settleAll(): void {
+    for (const id of [...this.asks.keys()]) this.settle(id, "no");
   }
 
   /** Feed an event in from outside (e.g. Ctrl+C as a barge-in). */
@@ -81,6 +126,7 @@ export class ConversationService {
     } finally {
       signal.removeEventListener("abort", onAbort);
       this.active?.abort.abort();
+      this.settleAll();
       stop.abort();
       await this.deps.control.close();
     }
@@ -138,9 +184,13 @@ export class ConversationService {
         this.active = null;
         const m = this.metrics.get(command.turnId);
         if (m) m.outcome = "interrupted";
+        this.settleAll();
         await brain.interrupt();
         return;
       }
+      case "answer":
+        this.settle(command.id, command.answer);
+        return;
       case "acknowledge":
         output.announce(command.text);
         return;
@@ -168,6 +218,7 @@ export class ConversationService {
       turnId,
       abort: new AbortController(),
       chunker: this.deps.newChunker?.() ?? new SentenceChunker(),
+      narrated: new Set(),
     };
     this.active = turn;
     const m = this.metrics.get(turnId) ?? { heard: text, outcome: "done" as const };
@@ -191,8 +242,15 @@ export class ConversationService {
             m.firstText ??= clock.now();
             turn.chunker.push(ev.delta).forEach(sentence);
             break;
-          case "tool":
-            break; // spoken narration arrives in M5
+          case "tool": {
+            const line = narration({ tool: ev.name, summary: ev.summary });
+            if (line && !turn.narrated.has(line)) {
+              turn.narrated.add(line);
+              turn.chunker.flush().forEach(sentence); // what Claude said before the call comes first
+              sentence(line);
+            }
+            break;
+          }
           case "done":
             turn.chunker.flush().forEach(sentence);
             this.events.push({ kind: "replyDone", turnId: turn.turnId });

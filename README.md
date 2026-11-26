@@ -15,7 +15,8 @@ Built on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk), sher
 | M2 mouth: replies spoken as they stream | done |
 | M3 ears + native engine: microphone, Moonshine, Kokoro, all in Node (jarvis-voice no longer needed) | **done** |
 | M4 barge-in: talk over Jarvis to cut him off (any speech on headphones; "stop", "wait", "hold on" on loudspeakers) | **done** (real voice: "hold on" works on laptop speakers) |
-| M5 spoken permissions, M6 polish | next |
+| M5 spoken permissions ("Shall I, sir?" / yes, no, always) and narration of reads and searches | **done** |
+| M6 polish: `doctor`, the Jarvis voice blend, CI, install script | next |
 
 ## Install and use
 
@@ -35,9 +36,11 @@ ends your turn. To cut Jarvis off, talk over him: on headphones anything you say
 `"bargeIn"` in the config forces `"anySpeech"`, `"stopWord"` or `"off"`. **Ctrl+C** also cuts a reply off;
 **Ctrl+C twice** quits. Say "new conversation", "use opus", "plan mode", "stop" or "goodbye".
 
-Reading and searching are allowed; edits and commands need approval, which arrives in M5, so for now
-Claude is told it can't do them. Destructive commands (`rm -rf ~`, `git push --force`, `sudo`, …) are
-always refused.
+Reading and searching just happen, and Jarvis says so ("Reading main.ts.", "Searching the code.").
+Edits and commands are asked about out loud ("I'd like to run the test suite. Shall I, sir?"): say or type
+"yes", "no", or "always" (that tool, or for commands that exact command, for the rest of the session).
+No answer in 30 s is a no, and so is "stop". Claude Code itself lets read-only commands (`ls`, `uname`, …)
+run without asking. Destructive commands (`rm -rf ~`, `git push --force`, `sudo`, …) are always refused.
 
 Settings, in `~/.config/jarvis-rt/config.json`: `address` (sir), `model` (sonnet), `speaker`
 (bm_daniel, bm_george, bm_fable, bm_lewis, bf_emma, …), `speed` (1.05), `endOfSpeechMs` (700), `voice`,

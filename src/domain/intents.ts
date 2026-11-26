@@ -51,3 +51,22 @@ export function parseIntent(text: string): Intent {
   }
   return { kind: "prompt", text: text.trim() };
 }
+
+/** An answer to "Shall I…?": "always" also means "don't ask again this session". */
+export type Answer = "yes" | "no" | "always";
+
+const YES = ["yes", "y", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "do it", "please do", "go for it",
+  "proceed", "fine", "certainly", "of course", "absolutely", "affirmative", "approved", "yes go ahead", "yes do it", "sounds good",
+  "yes please", "sure go ahead", "yeah go ahead", "okay go ahead", "ok go ahead", "yes go for it", "yeah do it", "please go ahead"];
+const NO = ["no", "n", "nope", "nah", "dont", "do not", "no thanks", "not now", "not", // "not now" loses its "now" as filler "cancel", "skip", "deny", "negative",
+  "no dont", "dont do that", "dont do it", "leave it"];
+const ALWAYS = ["always", "yes always", "always allow", "always yes", "dont ask again", "yes and dont ask again"];
+
+/** The user's reply to a permission question, or null if it isn't clearly one. */
+export function parseAnswer(text: string): Answer | null {
+  const core = strip(normalize(text)).replace(/^(yes|no) (sir|thanks|thank you)$/, "$1").replace(/ (please|thanks|thank you)$/, "");
+  if (ALWAYS.includes(core)) return "always";
+  if (YES.includes(core) || YES.some((y) => core === `${y} ${y}`)) return "yes";
+  if (NO.includes(core) || NO.some((n) => core === `${n} ${n}`)) return "no";
+  return null;
+}

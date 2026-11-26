@@ -124,7 +124,9 @@ export class ClaudeAgentBrain implements AgentBrain, AgentControl {
       env: { ...(process.env as Record<string, string>), JARVIS_VOICE_CHILD: "1" },
       ...(this.sessionId ? { resume: this.sessionId } : {}),
       canUseTool: async (toolName, input, { signal }) => {
-        const verdict = await this.opts.permission.decide({ tool: toolName, summary: summarizeToolInput(toolName, input) }, signal);
+        const description = typeof input.description === "string" ? input.description : undefined;
+        const call = { tool: toolName, summary: summarizeToolInput(toolName, input), ...(description ? { description } : {}) };
+        const verdict = await this.opts.permission.decide(call, signal);
         return verdict.allow ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: verdict.reason };
       },
     };

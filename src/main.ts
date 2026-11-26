@@ -45,7 +45,8 @@ Usage: jarvis-rt [--new] [--type] [--text] [--model opus|sonnet|haiku] [--cwd DI
 
 Speak after "Listening…"; a short pause ends your turn. To cut Jarvis off, talk over him (on loudspeakers,
 say "stop", "wait" or "hold on"), or press Ctrl+C. Ctrl+C twice quits.
-Say "new conversation", "use opus", "plan mode", "stop" or "goodbye".`;
+Say "new conversation", "use opus", "plan mode", "stop" or "goodbye".
+When Jarvis asks "Shall I…?" before an edit or a command, answer "yes", "no" or "always".`;
 
 /** Kokoro's output rate: the echo canceller's reference rate. */
 const KOKORO_RATE = 24000;
@@ -151,11 +152,14 @@ async function main(): Promise<number> {
   if (values.new) await sessions.clear();
   const resume = await sessions.last();
 
+  // Permission questions are asked in the conversation, which needs the brain: bound once it exists.
+  const conversation: { current?: ConversationService } = {};
   const brain = new ClaudeAgentBrain({
     model,
     cwd,
     systemAppend: VOICE_STYLE(config.address),
-    permission: new PolicyPermissionDecider({ ...DEFAULT_RULES, autoAllow: config.autoAllow }),
+    permission: new PolicyPermissionDecider({ ...DEFAULT_RULES, autoAllow: config.autoAllow },
+      (call, signal) => conversation.current?.ask(call, signal) ?? Promise.resolve("no")),
     resume,
     onSession: (id) => void sessions.save(id),
   });
@@ -175,6 +179,8 @@ async function main(): Promise<number> {
     newId: randomUUID,
     persona: { address: config.address },
   });
+
+  conversation.current = service;
 
   // Ctrl+C: cut the current reply off; a second Ctrl+C while idle quits.
   const stop = new AbortController();
