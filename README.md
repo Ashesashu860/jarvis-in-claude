@@ -32,9 +32,21 @@ jarvis ›  "Done. The test passes now."
 - **🧠 It's the full Claude Code.** Same tools and same sessions. Each project folder resumes its own conversation.
 - **🎩 He sounds like Jarvis.** A British voice blend that's ready out of the box, and you can tune it.
 
-## Get started
+## Installation
 
-You need macOS, Node.js 22 or newer, and [Claude Code](https://claude.com/claude-code) signed in once (`claude`).
+### 1. Install what you need first
+
+| You need | Check with | Install with |
+|---|---|---|
+| macOS | | |
+| Node.js 22 or newer | `node -v` | `brew install node`, or download it from [nodejs.org](https://nodejs.org) |
+| Git | `git --version` | `xcode-select --install` |
+| [Claude Code](https://claude.com/claude-code), signed in | `claude --version` | `npm install -g @anthropic-ai/claude-code` |
+
+Jarvis uses your Claude Code login (a Claude Pro or Max plan, or an API key), so run `claude` once and sign in
+before you start. You don't need any other account or API key.
+
+### 2. Download and install
 
 ```bash
 git clone https://github.com/Ashesashu860/jarvis-in-claude.git
@@ -42,16 +54,83 @@ cd jarvis-in-claude
 scripts/install.sh
 ```
 
-The installer builds the app, puts a `jarvis-rt` command in `~/.local/bin`, downloads the speech models (about
-440 MB, once) and runs a health check. Then open any project and say hello:
+The installer goes through four steps, and it's safe to run again at any time:
+
+1. installs the dependencies (`npm ci`)
+2. builds the app
+3. adds a `jarvis-rt` command to `~/.local/bin`. It needs no `sudo` and doesn't change your npm settings.
+4. downloads the voice and speech models, about 440 MB, once. They go in `~/.cache/jarvis-rt/models`.
+
+At the end it runs `jarvis-rt doctor` to check that everything works.
+
+### 3. Add the command to your PATH (only if the installer says so)
+
+If the installer prints that `~/.local/bin` isn't on your PATH, add it and open a new terminal:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+```
+
+### 4. Check that everything works
+
+```bash
+jarvis-rt doctor
+```
+
+```
+✓ Node.js: 24.13.0
+✓ Settings: ~/.config/jarvis-rt/config.json (voice jarvis, model sonnet)
+✓ Models: ~/.cache/jarvis-rt/models
+✓ Voice: jarvis, "Good evening, sir. All systems are ready." rendered in 547 ms
+✓ Speech recognition: heard the voice back as "Good evening sir, all systems are ready." in 27 ms
+✓ Speaker: MacBook Air Speakers (loudspeakers: say "stop", "wait" or "hold on" to cut him off …)
+✓ Microphone: receiving sound (peak 0.004 over 1.5 s)
+✓ Claude Code login: signed in, Claude Pro
+
+All good. Run jarvis-rt to start.
+```
+
+Anything that fails comes with the fix (`→ …`).
+
+### 5. Allow the microphone and say hello
 
 ```bash
 cd ~/code/my-project
 jarvis-rt
 ```
 
-The first time, macOS asks for microphone access for your terminal. Speak after *"Listening…"*. A short pause
-ends your turn.
+The first time, macOS asks whether your terminal (Terminal, iTerm, VS Code, …) may use the microphone. Choose
+**Allow**. Speak after *"Listening…"*, and a short pause ends your turn.
+
+If you clicked *Don't Allow* by mistake, go to **System Settings → Privacy & Security → Microphone**, turn your
+terminal on, and restart it.
+
+### Updating
+
+```bash
+cd jarvis-in-claude
+git pull
+scripts/install.sh
+```
+
+### Uninstalling
+
+```bash
+scripts/install.sh --uninstall
+```
+
+This removes the `jarvis-rt` command and prints the folders it kept: the models (`~/.cache/jarvis-rt`), your
+settings (`~/.config/jarvis-rt`) and your history (`~/.local/state/jarvis-rt`). Delete them too for a full clean-up.
+
+### Troubleshooting
+
+- **`jarvis-rt: command not found`**: see step 3, then open a new terminal.
+- **Doctor says the microphone is blocked**: allow your terminal in System Settings (see step 5).
+- **Doctor says "not signed in"**: run `claude` and sign in, then try again.
+- **He keeps interrupting himself on speakers**: set `"bargeIn": "stopWord"` (see below), or use headphones.
+- **Models are missing or the download broke**: run `jarvis-rt setup` to download them again.
+- **Custom folders**: `JARVIS_RT_BIN` changes where the command goes, and `JARVIS_RT_MODELS` changes where the
+  models are stored.
 
 ## Talking to Jarvis
 
