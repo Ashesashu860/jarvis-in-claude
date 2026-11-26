@@ -14,7 +14,7 @@ Built on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk), sher
 | M1 skeleton: typed conversation, resumes after restart, timing log | done |
 | M2 mouth: replies spoken as they stream | done |
 | M3 ears + native engine: microphone, Moonshine, Kokoro, all in Node (jarvis-voice no longer needed) | **done** |
-| M4 barge-in: talk over Jarvis to cut him off (any speech on headphones; "stop", "wait", "hold on" on loudspeakers) | **done**, needs a real-voice test |
+| M4 barge-in: talk over Jarvis to cut him off (any speech on headphones; "stop", "wait", "hold on" on loudspeakers) | **done** (real voice: "hold on" works on laptop speakers) |
 | M5 spoken permissions, M6 polish | next |
 
 ## Install and use

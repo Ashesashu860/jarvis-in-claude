@@ -106,3 +106,5 @@ needs the output node enabled explicitly (otherwise initialisation fails with -1
 playback) and transcribed as nonsense even with processing off, so the capture path is suspect, and this measured
 nothing reliable yet. It is the most promising next step for loudspeakers: a native helper that owns both speaker
 and microphone.
+
+**Real-voice test (2026-11-26):** on the MacBook Air speakers, saying "hold on" over Jarvis cuts him off.
