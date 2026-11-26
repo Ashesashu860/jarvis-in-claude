@@ -7,6 +7,8 @@ export const ConfigSchema = z.object({
   address: z.string().min(1).default("sir"),
   model: z.enum(["opus", "sonnet", "haiku"]).default("sonnet"),
   autoAllow: z.array(z.string()).default(["Read", "Glob", "Grep", "WebSearch", "WebFetch"]),
+  /** Speak replies through the jarvis-voice engine (false: text only). */
+  voice: z.boolean().default(true),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 

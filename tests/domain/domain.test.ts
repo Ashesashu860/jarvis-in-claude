@@ -137,3 +137,15 @@ describe("turn reducer", () => {
     expect(r.state).toEqual({ kind: "listening" });
   });
 });
+
+describe("SentenceChunker: a quick first piece", () => {
+  it("ends a long first piece at a word break, without waiting for the sentence to end", () => {
+    const c = new SentenceChunker();
+    expect(c.push("A port is an interface that the application core defines")).toEqual(["A port is an interface that the application core"]);
+    expect(c.push(" for the outside world. Fine.")).toEqual(["defines for the outside world."]);
+  });
+
+  it("leaves a short opening alone", () => {
+    expect(new SentenceChunker().push("Certainly, sir. More")).toEqual(["Certainly, sir."]);
+  });
+});

@@ -10,33 +10,40 @@ import { PolicyPermissionDecider } from "./application/policy-permission-decider
 import { ClaudeAgentBrain } from "./adapters/brain/claude-agent-brain.js";
 import { ConsoleOutput } from "./adapters/cli/console-output.js";
 import { KeyboardInput } from "./adapters/cli/keyboard-input.js";
+import { MirroredOutput } from "./adapters/cli/mirrored-output.js";
 import { defaultPaths, loadConfig } from "./adapters/config/file-config.js";
+import { defaultSocketPath } from "./adapters/engine/engine-protocol.js";
+import { JarvisEngineOutput } from "./adapters/engine/jarvis-engine-output.js";
 import { FileSessionStore } from "./adapters/store/file-session-store.js";
 import { systemClock } from "./adapters/system-clock.js";
 import { JsonlTimingLog } from "./adapters/telemetry/jsonl-timing-log.js";
 import { DEFAULT_RULES } from "./domain/permission-policy.js";
 
 const VOICE_STYLE = (address: string) =>
-  "Your replies are read aloud as they stream, so open with one short, plain sentence that answers or " +
-  "summarises; no markdown, lists, tables, emoji or code in what is spoken. Put code in files, not in replies. " +
+  "Your replies are read aloud as they stream. Open with a very short sentence (under eight words) that answers " +
+  "or acknowledges, then continue in plain, spoken sentences; no markdown, lists, tables, emoji or code in what " +
+  "is spoken. Put code in files, not in replies. " +
   `Be calm, precise and economical, with a dry, understated British wit. Address the user as '${address}'.`;
 
 const HELP = `jarvis-rt: talk to Claude Code in real time
 
-Usage: jarvis-rt [--new] [--model opus|sonnet|haiku] [--cwd DIR]
+Usage: jarvis-rt [--new] [--text] [--model opus|sonnet|haiku] [--cwd DIR]
 
   --new        start a new conversation instead of resuming the last one here
+  --text       print replies only; don't speak them
   --model      Claude model (default from settings: sonnet)
   --cwd        directory Claude works in (default: current)
   -h, --help   show this help
 
-Typed mode for now: type a prompt and press Enter. Ctrl+C cuts a reply off; Ctrl+D quits.
+Replies are spoken in the Jarvis voice (needs jarvis-voice installed) and printed.
+Typed input for now: type a prompt and press Enter. Ctrl+C cuts a reply off; Ctrl+D quits.
 Say "new conversation", "use opus", "plan mode" or "goodbye" (typed, for now).`;
 
 async function main(): Promise<number> {
   const { values } = parseArgs({
     options: {
       new: { type: "boolean", default: false },
+      text: { type: "boolean", default: false },
       model: { type: "string" },
       cwd: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
@@ -70,9 +77,20 @@ async function main(): Promise<number> {
   });
   brain.start(); // warm up while the user types
 
+  const transcript = new ConsoleOutput();
+  const engine = config.voice && !values.text
+    ? new JarvisEngineOutput({
+        socketPath: defaultSocketPath(),
+        clock: systemClock,
+        onWarning: (message) => process.stderr.write(`\n${message}\n`),
+      })
+    : null;
+  const output = engine ? new MirroredOutput(engine, [transcript]) : transcript;
+  engine?.prepare(); // load the voice while the user types
+
   const service = new ConversationService({
     input: new KeyboardInput(),
-    output: new ConsoleOutput(),
+    output,
     brain,
     control: brain,
     timings: new JsonlTimingLog(paths.timings),

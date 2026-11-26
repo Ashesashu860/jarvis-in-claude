@@ -4,8 +4,10 @@
  * - A piece ends at sentence punctuation followed by whitespace, or at a newline. A full stop at the
  *   very end of the buffer waits for the next delta, since it could still turn out to be "3.5".
  * - Common abbreviations ("e.g.", "Mr.") don't end a sentence.
- * - The first piece of a reply is cut at a comma once it's long enough, so the voice can start on
- *   the opening clause (~0.3 s to render) instead of the whole sentence (~0.8 s).
+ * - The first piece of a reply is kept short, so the voice can start on it quickly: it ends at a
+ *   comma once it's long enough, or failing that at a word break near `maxFirstChars`. Rendering
+ *   speech takes about 1 s per 90 characters, so a 90-character opening sentence would delay the
+ *   first audio by a second, while the rest renders as the opening plays.
  * - Fenced code blocks are dropped: code is for the screen, not the ear.
  *
  * Pure and synchronous; one instance per reply (call `reset()` when a reply is interrupted).
@@ -13,9 +15,11 @@
 export interface ChunkerOptions {
   /** A comma at or after this index may end the first piece of a reply. */
   readonly quickStartComma: number;
+  /** With no comma or sentence end by then, the first piece ends at a word break before this. */
+  readonly maxFirstChars: number;
 }
 
-const DEFAULTS: ChunkerOptions = { quickStartComma: 20 };
+const DEFAULTS: ChunkerOptions = { quickStartComma: 20, maxFirstChars: 48 };
 const ABBREVIATIONS = /(?:\b(?:e\.g|i\.e|etc|vs|Mr|Mrs|Ms|Dr|St|approx)\.)$/i;
 const FENCE = "```";
 
@@ -83,6 +87,10 @@ export class SentenceChunker {
         if (ch === "." && ABBREVIATIONS.test(text.slice(0, i + 1))) continue;
         return i + 1;
       }
+    }
+    if (this.emitted === 0 && text.length > this.options.maxFirstChars) {
+      const cut = text.lastIndexOf(" ", this.options.maxFirstChars);
+      if (cut >= this.options.quickStartComma) return cut;
     }
     return -1;
   }
