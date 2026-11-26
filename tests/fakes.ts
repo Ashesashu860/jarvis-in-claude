@@ -87,3 +87,54 @@ export async function until(cond: () => boolean, ms = 1000): Promise<void> {
     await new Promise((r) => setTimeout(r, 2));
   }
 }
+
+/** Renders 10 ms of audio per character, after `delayMs`. */
+export class FakeSynth {
+  readonly sampleRate = 1000;
+  readonly rendered: string[] = [];
+  constructor(private readonly delayMs = 1) {}
+  async render(text: string): Promise<Float32Array> {
+    await new Promise((r) => setTimeout(r, this.delayMs));
+    this.rendered.push(text);
+    return new Float32Array(text.length * 10);
+  }
+}
+
+export class FakeSink {
+  written = 0;
+  stops = 0;
+  write(samples: Float32Array): Promise<void> { this.written += samples.length; return Promise.resolve(); }
+  stop(): void { this.stops++; }
+}
+
+/** A scripted microphone: tests push frames and speech/silence edges. */
+export class FakeMic {
+  readonly sampleRate = 1000;
+  private frameL: ((s: Float32Array) => void)[] = [];
+  private speechL: (() => void)[] = [];
+  private silenceL: (() => void)[] = [];
+  closed = false;
+  onFrame(l: (s: Float32Array) => void): void { this.frameL.push(l); }
+  onSpeech(l: () => void): void { this.speechL.push(l); }
+  onSilence(l: () => void): void { this.silenceL.push(l); }
+  close(): void { this.closed = true; }
+  /** One utterance: `ms` of audio framed in 10 ms chunks between speech and silence. */
+  utter(ms: number): void {
+    for (const l of this.speechL) l();
+    for (let i = 0; i < ms / 10; i++) for (const l of this.frameL) l(new Float32Array(10).fill(0.1));
+    for (const l of this.silenceL) l();
+  }
+  frames(ms: number): void {
+    for (let i = 0; i < ms / 10; i++) for (const l of this.frameL) l(new Float32Array(10));
+  }
+}
+
+/** Returns the scripted transcripts in order. */
+export class FakeTranscriber {
+  readonly heard: number[] = [];
+  constructor(private readonly texts: string[]) {}
+  transcribe(samples: Float32Array): Promise<string> {
+    this.heard.push(samples.length);
+    return Promise.resolve(this.texts.shift() ?? "");
+  }
+}

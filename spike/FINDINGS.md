@@ -43,3 +43,33 @@ the wait to 0.7 s, or adding streaming speech recognition later, gives margin. A
    dialog. Use scoped `disallowedTools` rules for things that are never allowed.
 5. **The ports in the architecture hold.** `AgentEvent.text` maps to `text_delta`, `tool` to
    `content_block_start` with `tool_use`, `done` to `result`, and `interrupt()` to `query.interrupt()`.
+
+# M3 spike: a native engine replaces jarvis-voice (2026-11-26)
+
+jarvis-voice was removed from this Mac, so jarvis-rt gets its own engine in Node: **sherpa-onnx-node 2.0.3**
+(Kokoro voice, Moonshine/Whisper recognition, prebuilt for Apple Silicon) and **decibri 5.8** (microphone with
+Silero VAD, denoise and echo cancellation; speaker). Scripts: `spike/native-engine-spike.ts`,
+`spike/tts-bench.ts`, `spike/stt-accuracy.ts`. Models live in `~/.cache/jarvis-rt/models`.
+
+| Voice (Kokoro v1.0, speaker 24 = bm_daniel) | "Certainly, sir." | longer sentence |
+|---|---|---|
+| fp32 `model.onnx`, CPU, 4 threads (**chosen**) | **305 ms** | 665 ms |
+| fp32, 2 threads / 8 threads | 496 / 327 ms | 1051 / 734 ms |
+| int8 `model.int8.onnx`, CPU, 4 threads | 683 ms | 1751 ms |
+| CoreML provider | crashes on int8, slower on fp32 | — |
+| (old jarvis-voice Python engine, for comparison) | 330 ms | 760 ms |
+
+| Recognition (real recorded speech) | 6.6 s clip | 16.7 s clip | accuracy |
+|---|---|---|---|
+| **Moonshine base, quantized (chosen)** | **71 ms** | **234 ms** | same as Whisper; better punctuation, British spelling |
+| Whisper base.en int8 | 361 ms | 899 ms | reference |
+| (old jarvis-voice: Whisper small.en on the Apple GPU) | ~550 ms per 4 s | | |
+
+Other measurements: Kokoro loads in 0.6 s; opening the speaker costs about 250 ms, and opening the microphone
+with Silero VAD about 2.4 s, so both stay open for the whole session. The microphone delivered audio with the
+terminal's existing permission. Voice IDs are in the model's metadata (`id2speaker`): bm_daniel 24, bm_fable 25,
+bm_george 26, bm_lewis 27, so the old Jarvis blend can be rebuilt as a custom `voices.bin` entry later.
+
+**Estimated spoken turn:** a 0.7 s end-of-speech wait, 0.1 s transcription, about 0.9 s for Claude's first piece,
+and 0.3 s for the voice, about **2.0 s** to first audio, against 2.7–3.0 s on the jarvis-voice engine and 5–12 s
+with its hooks.

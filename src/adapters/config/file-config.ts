@@ -7,8 +7,15 @@ export const ConfigSchema = z.object({
   address: z.string().min(1).default("sir"),
   model: z.enum(["opus", "sonnet", "haiku"]).default("sonnet"),
   autoAllow: z.array(z.string()).default(["Read", "Glob", "Grep", "WebSearch", "WebFetch"]),
-  /** Speak replies through the jarvis-voice engine (false: text only). */
+  /** Speak replies aloud (false: text only). */
   voice: z.boolean().default(true),
+  /** Kokoro voice: bm_daniel, bm_george, bm_fable, bm_lewis, bf_emma, … */
+  speaker: z.enum(["bm_daniel", "bm_fable", "bm_george", "bm_lewis", "bf_alice", "bf_emma", "bf_isabella", "bf_lily"]).default("bm_daniel"),
+  speed: z.number().min(0.5).max(2).default(1.05),
+  /** Listen through the microphone (false: type prompts). */
+  listen: z.boolean().default(true),
+  /** Silence, in milliseconds, that means you've finished speaking. */
+  endOfSpeechMs: z.number().int().min(200).max(3000).default(700),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 

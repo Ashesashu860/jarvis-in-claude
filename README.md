@@ -3,7 +3,7 @@
 A real-time voice front end for Claude Code: Jarvis starts speaking from the **first streamed sentence** of
 Claude's reply, and stops the moment you talk over it. Speech stays on your Mac.
 
-Built on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk) with a hexagonal
+Built on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk), sherpa-onnx and decibri, with a hexagonal
 (ports and adapters) architecture. See the architecture page and `~/Documents/jarvis-rt-plan.md`.
 
 ## Status
@@ -12,33 +12,46 @@ Built on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk) with 
 |---|---|
 | M0 spike: streaming, sessions, interrupt measured (`spike/FINDINGS.md`) | done |
 | M1 skeleton: typed conversation, resumes after restart, timing log | done |
-| M2 mouth: replies spoken in the Jarvis voice as they stream | **done** |
-| M3 ears (mic), M4 barge-in, M5 spoken permissions, M6 polish | next |
+| M2 mouth: replies spoken as they stream | done |
+| M3 ears + native engine: microphone, Moonshine, Kokoro, all in Node (jarvis-voice no longer needed) | **done** |
+| M4 barge-in (talk over Jarvis), M5 spoken permissions, M6 polish | next |
 
-## Use (typed input for now)
-
-Needs [jarvis-voice](https://github.com/Ashesashu860/jarvis-voice) installed (`jarvis` on PATH, from the
-`fix/voice-session-and-hangs` branch or later) for the voice; jarvis-rt starts its speech daemon itself.
-Without it, or with `--text`, replies are printed only.
+## Install and use
 
 ```bash
 npm install
-npm start                 # resumes the last conversation in this folder
+npm start -- setup        # downloads the voice and speech models once, about 440 MB, to ~/.cache/jarvis-rt/models
+npm start                 # speak after "Listening…"; resumes the last conversation in this folder
 npm start -- --new        # start afresh
+npm start -- --type       # type prompts instead of speaking
+npm start -- --text       # print replies only, no voice
 npm start -- --model opus
-npm start -- --text       # print only, no voice
 ```
 
-Type a prompt and press Enter. **Ctrl+C** cuts a reply off; **Ctrl+D** quits. Typed commands (spoken later):
-"new conversation", "use opus", "plan mode", "stop", "goodbye". A prompt typed while Jarvis is replying
-waits its turn.
+macOS asks for **microphone access** for your terminal the first time. A short pause (0.7 s, `endOfSpeechMs`)
+ends your turn. Until M4, Jarvis doesn't listen while it's talking. **Ctrl+C** cuts a reply off;
+**Ctrl+C twice** quits. Say "new conversation", "use opus", "plan mode", "stop" or "goodbye".
 
 Reading and searching are allowed; edits and commands need approval, which arrives in M5, so for now
 Claude is told it can't do them. Destructive commands (`rm -rf ~`, `git push --force`, `sudo`, …) are
 always refused.
 
-Settings: `~/.config/jarvis-rt/config.json` (`address`, `model`, `autoAllow`, `voice`). Per-turn timings:
-`~/.local/state/jarvis-rt/timings.jsonl`.
+Settings, in `~/.config/jarvis-rt/config.json`: `address` (sir), `model` (sonnet), `speaker`
+(bm_daniel, bm_george, bm_fable, bm_lewis, bf_emma, …), `speed` (1.05), `endOfSpeechMs` (700), `voice`,
+`listen`, `autoAllow`. Per-turn timings are logged to `~/.local/state/jarvis-rt/timings.jsonl`.
+
+## How it works
+
+Everything runs on your Mac. Speech goes **microphone → decibri** (Silero voice detection; its hold-off is the
+end-of-speech wait) **→ Moonshine** (sherpa-onnx, about 30 ms per utterance) **→ Claude** via the Agent SDK, one
+live session, streaming. The reply goes **sentence chunker** (a short first piece) **→ speech cleaner**
+("hooks.py:42" → "hooks dot py, line 42") **→ eSpeak phonemes** (offline WASM; sherpa-onnx's own lexicon would drop
+unknown words) **→ Kokoro** (bm_daniel, about 0.3–0.5 s per sentence) **→ decibri speaker**. The next sentence
+renders while the current one plays.
+
+Measured end to end (real models, Sonnet, muted speaker): first audio **1.8–2.2 s** after you stop talking,
+including the 0.7 s end-of-speech wait. That compares with 5–12 s through jarvis-voice's Claude Code hooks.
+The process uses about 1.2 GB of memory while running.
 
 ## Develop
 
@@ -51,15 +64,3 @@ npx vitest run --coverage
 Layout: `src/domain` (pure rules, no I/O) → `src/application` (ports and the conversation service) →
 `src/adapters` (SDK, CLI, files). `src/main.ts` wires them. `npm run layers` fails if a dependency points
 outwards.
-
-## How speaking works
-
-Each piece of the streamed reply goes to the jarvis-voice speech daemon as a tagged `say` that joins the reply
-already playing, so the next sentence renders while the current one plays. The daemon reports when each tag
-starts and finishes, which drives the first-audio timing and the end of the turn. The first piece is kept short
-(a comma, or a word break within 48 characters), since the voice renders about 90 characters a second. Making
-text speakable (`hooks.py:42` → "hooks dot py, line 42") stays in the engine, so there's one implementation.
-
-Measured (muted engine, Sonnet, warm): first audio **1.35–1.65 s** after the prompt is sent, against 2.1 s
-before the short-first-piece change. With the mic's end-of-speech wait and transcription added in M3, that
-comes to roughly 2.7–3.0 s, against 5–12 s with jarvis-voice's hooks.

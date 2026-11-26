@@ -7,8 +7,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PlaybackEvent, SpeechOutput } from "../../src/application/ports.js";
 import { ConsoleOutput } from "../../src/adapters/cli/console-output.js";
 import { MirroredOutput } from "../../src/adapters/cli/mirrored-output.js";
-import { JarvisEngineOutput } from "../../src/adapters/engine/jarvis-engine-output.js";
-import { FakeEngine } from "../fake-engine.js";
+import { NativeVoiceOutput } from "../../src/adapters/native/native-voice-output.js";
+import { FakeSink, FakeSynth } from "../fakes.js";
 import { FakeOutput, until } from "../fakes.js";
 
 const sink = () => new Writable({ write(_c, _e, cb) { cb(); } });
@@ -16,18 +16,15 @@ const clock = { now: () => performance.now(), wall: () => new Date() };
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const c of cleanups.splice(0)) await c(); });
 
-async function engineOutput(): Promise<SpeechOutput> {
-  const engine = new FakeEngine();
-  await engine.start();
-  cleanups.push(() => engine.stop());
-  return new JarvisEngineOutput({ socketPath: engine.path, clock, startCommand: [] });
+function nativeVoice(): Promise<SpeechOutput> {
+  return Promise.resolve(new NativeVoiceOutput({ synth: new FakeSynth(), sink: new FakeSink(), clock }));
 }
 
 const implementations: Record<string, () => Promise<SpeechOutput>> = {
   ConsoleOutput: () => Promise.resolve(new ConsoleOutput(sink(), clock)),
   FakeOutput: () => Promise.resolve(new FakeOutput()),
-  JarvisEngineOutput: engineOutput,
-  MirroredOutput: async () => new MirroredOutput(await engineOutput(), [new ConsoleOutput(sink(), clock)]),
+  NativeVoiceOutput: nativeVoice,
+  MirroredOutput: async () => new MirroredOutput(await nativeVoice(), [new ConsoleOutput(sink(), clock)]),
 };
 
 function record(output: SpeechOutput) {

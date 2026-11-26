@@ -20,6 +20,9 @@
   "private": "true",
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.332",
+    "decibri": "^5.8.0",
+    "phonemizer": "^1.2.1",
+    "sherpa-onnx-node": "^2.0.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {

@@ -6,7 +6,8 @@ import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import type { InputEvent, SpeechInput } from "../../src/application/ports.js";
 import { KeyboardInput } from "../../src/adapters/cli/keyboard-input.js";
-import { FakeInput } from "../fakes.js";
+import { MicInput } from "../../src/adapters/native/mic-input.js";
+import { FakeInput, FakeMic } from "../fakes.js";
 
 interface Harness {
   input: SpeechInput;
@@ -22,6 +23,19 @@ const adapters: Record<string, () => Harness> = {
   FakeInput: () => {
     const f = new FakeInput();
     return { input: f, speak: (t) => f.say(t), close: () => f.close() };
+  },
+  MicInput: () => {
+    const mic = new FakeMic();
+    const said: string[] = [];
+    const transcriber = { transcribe: () => Promise.resolve(said.shift() ?? "") };
+    const input = new MicInput({ mic, transcriber, clock: { now: () => performance.now(), wall: () => new Date() }, minSpeechMs: 100 });
+    // The mic has no end of its own: closing it means aborting, so deliver what was said first.
+    let ac: AbortController | null = null;
+    return {
+      input: { events: (signal: AbortSignal) => { ac = new AbortController(); signal.addEventListener("abort", () => ac?.abort()); return input.events(ac.signal); } },
+      speak: (t) => { said.push(t); mic.utter(300); },
+      close: () => { setTimeout(() => ac?.abort(), 20); },
+    };
   },
 };
 
